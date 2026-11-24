@@ -8,12 +8,16 @@ import com.wmods.wppenhacer.xposed.core.components.StatusItemWpp
 import com.wmods.wppenhacer.xposed.core.devkit.Unobfuscator
 import com.wmods.wppenhacer.xposed.utils.YukiLog
 import java.lang.reflect.Modifier
+import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
 class SortStatusByTime(classLoader: ClassLoader, preferences: SharedPreferences) :
     Feature(classLoader, preferences) {
 
-    private var dumped = 0
+    private var logs = 0
+    private val fmt = SimpleDateFormat("dd HH:mm:ss", Locale.US)
 
     override fun doHook() {
         runCatching {
@@ -25,25 +29,21 @@ class SortStatusByTime(classLoader: ClassLoader, preferences: SharedPreferences)
                         if (list.size < 2) continue
 
                         val times = list.map { timeOf(it) }
-                        YukiLog.log(
-                            "SortStatus: arg$i size=${list.size} readable=${times.count { it > 0L }}"
-                        )
-                        if (dumped < 3) {
-                            dumped++
+                        if (times.none { it > 0L }) continue
+
+                        val order = list.indices.sortedByDescending { times[it] }
+                        val sorted = order.map { list[it] }
+
+                        if (logs < 30) {
+                            logs++
                             try {
-                                val sb = StringBuilder()
-                                dump(list[0], 0, "item0", sb, intArrayOf(300))
-                                sb.toString().chunked(900).forEachIndexed { k, s ->
-                                    YukiLog.log("SortStatus: dump$dumped.$k $s")
-                                }
+                                YukiLog.log(
+                                    "SortStatus: arg$i n=${list.size} " +
+                                        "before=${show(times)} after=${show(order.map { times[it] })}"
+                                )
                             } catch (_: Throwable) {
                             }
                         }
-                        if (times.none { it > 0L }) continue
-
-                        val sorted = list.indices
-                            .sortedByDescending { times[it] }
-                            .map { list[it] }
 
                         var done = false
                         if (list is MutableList<*>) {
@@ -62,6 +62,9 @@ class SortStatusByTime(classLoader: ClassLoader, preferences: SharedPreferences)
         }.onFailure { logDebug(it) }
     }
 
+    private fun show(l: List<Long>): String =
+        l.take(6).joinToString(",") { if (it > 0L) fmt.format(Date(it)) else "?" }
+
     private fun timeOf(item: Any?): Long {
         val viaWpp = try {
             StatusItemWpp.from(item)?.fMessage?.timeStamp ?: -1L
@@ -69,8 +72,9 @@ class SortStatusByTime(classLoader: ClassLoader, preferences: SharedPreferences)
             -1L
         }
         if (viaWpp > 0L) return viaWpp
+        val limit = System.currentTimeMillis() + 3_600_000L
         val deep = try {
-            deepTime(item, 0, intArrayOf(400))
+            deepTime(item, 0, intArrayOf(400), limit)
         } catch (_: Throwable) {
             -1L
         }
@@ -82,7 +86,9 @@ class SortStatusByTime(classLoader: ClassLoader, preferences: SharedPreferences)
         }
     }
 
-    private fun deepTime(obj: Any?, depth: Int, budget: IntArray): Long {
+    // Hanya terima waktu epoch (ms) yang kelipatan 1000 dan tidak di masa depan:
+    // itu waktu status asli. Waktu pemrosesan (ada milidetik) dan angka masa depan diabaikan.
+    private fun deepTime(obj: Any?, depth: Int, budget: IntArray, limit: Long): Long {
         if (obj == null || depth > 3 || budget[0] <= 0) return -1L
         budget[0]--
         var best = -1L
@@ -95,21 +101,19 @@ class SortStatusByTime(classLoader: ClassLoader, preferences: SharedPreferences)
                     val v = f.get(obj) ?: continue
                     when (v) {
                         is Long -> {
-                            if (v in 1_600_000_000_000L..2_200_000_000_000L) {
+                            if (v in 1_600_000_000_000L..limit && v % 1000L == 0L) {
                                 best = maxOf(best, v)
-                            } else if (v in 1_600_000_000L..2_200_000_000L) {
-                                best = maxOf(best, v * 1000L)
                             }
                         }
                         is List<*> -> for (e in v.take(30)) {
-                            best = maxOf(best, deepTime(e, depth + 1, budget))
+                            best = maxOf(best, deepTime(e, depth + 1, budget, limit))
                         }
                         else -> {
                             val n = v.javaClass.name
                             if (!n.startsWith("java.") && !n.startsWith("android.") &&
                                 !n.startsWith("kotlin.")
                             ) {
-                                best = maxOf(best, deepTime(v, depth + 1, budget))
+                                best = maxOf(best, deepTime(v, depth + 1, budget, limit))
                             }
                         }
                     }
@@ -121,8 +125,7 @@ class SortStatusByTime(classLoader: ClassLoader, preferences: SharedPreferences)
         return best
     }
 
-    // Cadangan: ubah teks waktu di layar ("16:15", "19 menit yang lalu", "Kemarin")
-    // menjadi perkiraan waktu epoch.
+    // Cadangan: ubah teks waktu di layar menjadi perkiraan waktu epoch.
     private fun labelKey(item: Any?): Long {
         if (item == null) return -1L
         var c: Class<*>? = item.javaClass
@@ -163,41 +166,6 @@ class SortStatusByTime(classLoader: ClassLoader, preferences: SharedPreferences)
             s.contains("detik") || s.contains("second") ||
                 s.contains("baru") || s.contains("now") -> 0L
             else -> 2880L
-        }
-    }
-
-    private fun dump(obj: Any?, depth: Int, path: String, out: StringBuilder, budget: IntArray) {
-        if (obj == null || depth > 3 || budget[0] <= 0) return
-        budget[0]--
-        var c: Class<*>? = obj.javaClass
-        while (c != null && c != Any::class.java) {
-            for (f in c.declaredFields) {
-                if (Modifier.isStatic(f.modifiers)) continue
-                try {
-                    f.isAccessible = true
-                    val v = f.get(obj) ?: continue
-                    val p = "$path.${f.name}"
-                    when (v) {
-                        is Long, is Int, is Boolean, is CharSequence ->
-                            out.append(p).append('=').append(v.toString().take(40)).append(" | ")
-                        is List<*> -> {
-                            out.append(p).append("=List(").append(v.size).append(") | ")
-                            if (v.isNotEmpty()) dump(v[0], depth + 1, "$p[0]", out, budget)
-                        }
-                        else -> {
-                            val n = v.javaClass.name
-                            out.append(p).append(':').append(n).append(" | ")
-                            if (!n.startsWith("java.") && !n.startsWith("android.") &&
-                                !n.startsWith("kotlin.")
-                            ) {
-                                dump(v, depth + 1, p, out, budget)
-                            }
-                        }
-                    }
-                } catch (_: Throwable) {
-                }
-            }
-            c = c.superclass
         }
     }
 
