@@ -51,6 +51,7 @@ import com.wmods.wppenhacer.xposed.features.others.GroupAdmin
 import com.wmods.wppenhacer.xposed.features.others.JumpFirstMessage
 import com.wmods.wppenhacer.xposed.features.others.MenuHome
 import com.wmods.wppenhacer.xposed.features.others.MinorFixes
+import com.wmods.wppenhacer.xposed.features.others.SortStatusByTime
 import com.wmods.wppenhacer.xposed.features.others.Stickers
 import com.wmods.wppenhacer.xposed.features.others.TextStatusComposer
 import com.wmods.wppenhacer.xposed.features.others.ToastViewer
@@ -130,6 +131,7 @@ internal object FeatureRegistry {
         AudioTranscript::class.java,
         GoogleTranslate::class.java,
         ContactVerify::class.java,
+        SortStatusByTime::class.java,
         LockedChatsEnhancer::class.java,
         CallRecording::class.java,
         BackupRestore::class.java,
