@@ -6,23 +6,31 @@ import com.highcapable.yukihookapi.extension.kavaref.hookAll
 import com.wmods.wppenhacer.xposed.core.Feature
 import com.wmods.wppenhacer.xposed.core.components.StatusItemWpp
 import com.wmods.wppenhacer.xposed.core.devkit.Unobfuscator
+import com.wmods.wppenhacer.xposed.utils.YukiLog
 
 class SortStatusByTime(classLoader: ClassLoader, preferences: SharedPreferences) :
     Feature(classLoader, preferences) {
 
     override fun doHook() {
         runCatching {
-            val statusListUpdatesClass = Unobfuscator.loadStatusListUpdatesClass(classLoader)
-            statusListUpdatesClass.resolve().constructor {}.hookAll {
+            val cls = Unobfuscator.loadStatusListUpdatesClass(classLoader)
+            cls.resolve().constructor {}.hookAll {
                 before {
+                    YukiLog.log("SortStatus: ctor args=${args.size}")
                     for (i in args.indices) {
                         val list = args[i] as? List<*> ?: continue
-                        if (list.size < 2) continue
+                        val times = list.map { timeOf(it) }
+                        YukiLog.log(
+                            "SortStatus: arg$i size=${list.size} " +
+                                "readable=${times.count { it > 0L }} " +
+                                "type=${list.javaClass.name} " +
+                                "first=${list.firstOrNull()?.javaClass?.name}"
+                        )
+                        if (list.size < 2 || times.count { it > 0L } < 2) continue
 
-                        val keyed = list.map { it to timeOf(it) }
-                        if (keyed.any { it.first == null || it.second <= 0L }) continue
-
-                        val sorted = keyed.sortedByDescending { it.second }.map { it.first }
+                        val sorted = list.indices
+                            .sortedByDescending { times[it] }
+                            .map { list[it] }
 
                         var done = false
                         if (list is MutableList<*>) {
