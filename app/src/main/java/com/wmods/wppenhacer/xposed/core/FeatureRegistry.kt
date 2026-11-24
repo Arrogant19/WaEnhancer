@@ -21,7 +21,6 @@ import com.wmods.wppenhacer.xposed.features.general.CallType
 import com.wmods.wppenhacer.xposed.features.general.CaptureDevice
 import com.wmods.wppenhacer.xposed.features.general.ChatLimit
 import com.wmods.wppenhacer.xposed.features.general.DeleteStatus
-import com.wmods.wppenhacer.xposed.features.general.DeletedBackupViewer
 import com.wmods.wppenhacer.xposed.features.general.DeletedMessageCapture
 import com.wmods.wppenhacer.xposed.features.general.NewChat
 import com.wmods.wppenhacer.xposed.features.general.Others
@@ -115,7 +114,6 @@ internal object FeatureRegistry {
         Tasker::class.java,
         DeleteStatus::class.java,
         DeletedMessageCapture::class.java,
-        DeletedBackupViewer::class.java,
         DownloadViewOnce::class.java,
         Channels::class.java,
         DownloadProfile::class.java,
